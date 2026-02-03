@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Jorhat TWSS Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+html,body,#map { height:100%; margin:0; padding:0; font-family:system-ui;}
+.app { display:grid; grid-template-columns:300px 1fr; height:100vh;}
+header { grid-column:1/-1; padding:10px 16px; background:#0f172a; color:#fff; display:flex; align-items:center; justify-content:space-between;}
+#sidebar { background:#fff; padding:12px; overflow:auto; border-right:1px solid #ddd;}
+.layer-row { display:flex; align-items:center; gap:8px; margin:6px 0;}
+small { font-size:12px; color:#666;}
+#map { position:relative; }
+.feature-label { background:rgba(255,255,255,.9); padding:2px 6px; border-radius:4px; font-size:12px; font-weight:600;}
+.legend { background:#fff; padding:8px; border-radius:6px; box-shadow:0 6px 18px rgba(8,16,40,.06); font-size:13px;}
+.legend-section {
+  margin-bottom: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.legend-header {
+  background: #f1f5f9;
+  padding: 8px 10px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.legend-body {
+  display: none;
+  padding: 8px 10px;
+  background: #ffffff;
+}
+
+.legend-body.open {
+  display: block;
+}
+
+/* Mobile layout behaviour */
+@media (max-width: 768px) {
+
+  .app {
+      grid-template-columns: 1fr !important; /* map full width */
+  }
+
+  #sidebar {
+      position: absolute;
+      width: 260px;
+      height: 100%;
+      top: 50px;
+      left: -260px;          /* hidden position */
+      z-index: 999;
+      transition: left 0.3s ease;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+  }
+
+  #sidebar.open {
+      left: 0;               /* slide in */
+  }
+
+  /* Hamburger button appears only on mobile */
+  #toggleSidebar {
+      display: block !important;
+  }
+}
+</style>
+</head>
+
+<body>
+<header>
+    <button id="toggleSidebar" 
+    style="padding:6px 10px;border:none;border-radius:4px;background:#334155;color:white;display:none;">
+    ☰
+</button>
+  <h2 style="margin:0;">Jorhat TWSS Dashboard</h2>
+  <button id="zoomAll" style="padding:6px 10px;border:none;border-radius:4px;background:#4aa3ff;color:white;">Zoom to Data</button>
+</header>
+
+<div class="app">
+
+<aside id="sidebar">
+  <h3>Layers</h3>
+
+  <div class="layer-row"><input type="checkbox" id="chkESR" checked><label for="chkESR">ESR</label></div>
+  <div class="layer-row"><input type="checkbox" id="chkCompleted" checked><label for="chkCompleted">Completed Pipeline</label></div>
+  <div class="layer-row"><input type="checkbox" id="chkProposed" checked><label for="chkProposed">Proposed Pipeline</label></div>
+  <div class="layer-row"><input type="checkbox" id="chkRoads" checked><label for="chkRoads">Roads / Rail / Waterway</label></div>
+  <div class="layer-row"><input type="checkbox" id="chkZoning" checked><label for="chkZoning">Zoning</label></div>
+  <div class="layer-row"><input type="checkbox" id="chkRWM" checked><label for="chkRWM">RWM / CWM</label></div>
+  <h4>Obstacles</h4>
+
+<div class="layer-row"><input type="checkbox" id="chkTree" checked><label>Tree</label></div>
+<div class="layer-row"><input type="checkbox" id="chkPole" checked><label>Electric Pole</label></div>
+<div class="layer-row"><input type="checkbox" id="chkTransformer" checked><label>Transformer</label></div>
+<div class="layer-row"><input type="checkbox" id="chkBridge" checked><label>Bridge</label></div>
+<div class="layer-row"><input type="checkbox" id="chkCulvert" checked><label>Culvert</label></div>
+<div class="layer-row"><input type="checkbox" id="chkBuilding" checked><label>Building / Property</label></div>
+<div class="layer-row"><input type="checkbox" id="chkWall" checked><label>Wall / Embankment</label></div>
+<div class="layer-row"><input type="checkbox" id="chkOther" checked><label>Other</label></div>
+
+
+  <hr>
+
+  <h3>Basemap</h3>
+  <div class="layer-row"><input type="radio" name="bm" id="bmOSM" checked><label for="bmOSM">OSM</label></div>
+  <div class="layer-row"><input type="radio" name="bm" id="bmSAT"><label for="bmSAT">Satellite</label></div>
+
+  <hr>
+<div id="legendContainer">
+
+  <!-- PIPELINES -->
+  <div class="legend-section">
+    <div class="legend-header" onclick="toggleLegend(this)">Pipelines</div>
+    <div class="legend-body">
+      <div><span style="display:inline-block;width:24px;height:4px;background:#fb154b;margin-right:6px;"></span>Completed Pipeline</div>
+      <div><span style="display:inline-block;width:24px;height:4px;background:#6ce8fb;border-top:2px dashed #000;margin-right:6px;"></span>Proposed Pipeline</div>
+    </div>
+  </div>
+
+  <!-- ESR -->
+  <div class="legend-section">
+    <div class="legend-header" onclick="toggleLegend(this)">ESR</div>
+    <div class="legend-body">
+      <div style="display:flex;align-items:center;">
+        <img src="data:image/svg+xml;charset=utf-8,
+        %3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30'%3E
+        %3Cellipse cx='15' cy='8' rx='10' ry='4' fill='%23006aff'/%3E
+        %3Crect x='5' y='8' width='20' height='12' fill='%23006aff'/%3E
+        %3Cellipse cx='15' cy='20' rx='10' ry='4' fill='%230057d1'/%3E
+        %3C/svg%3E" style="width:24px;height:24px;margin-right:6px;">
+        Elevated Storage Reservoir (Tank)
+      </div>
+    </div>
+  </div>
+
+  <!-- ROADS -->
+  <div class="legend-section">
+    <div class="legend-header" onclick="toggleLegend(this)">Roads / Rail / Waterway</div>
+    <div class="legend-body">
+      <div><span style="display:inline-block;width:24px;height:4px;background:#65707a;margin-right:6px;"></span>Road</div>
+      <div><span style="display:inline-block;width:24px;height:4px;background:#8b5a2b;border-top:2px dashed #000;margin-right:6px;"></span>Railway</div>
+      <div><span style="display:inline-block;width:24px;height:4px;background:#2b8cff;border-top:2px dotted #000;margin-right:6px;"></span>Waterway</div>
+    </div>
+  </div>
+
+  <!-- ZONING -->
+  <div class="legend-section">
+    <div class="legend-header" onclick="toggleLegend(this)">Zoning</div>
+    <div class="legend-body">
+      <div><span style="display:inline-block;width:18px;height:18px;background:rgba(11,18,32,0.08);border:1px solid #0b1220;margin-right:6px;"></span>Zoning Boundary</div>
+    </div>
+  </div>
+
+  <!-- RWM/CWM -->
+  <div class="legend-section">
+    <div class="legend-header" onclick="toggleLegend(this)">RWM / CWM</div>
+    <div class="legend-body">
+      <div><span style="display:inline-block;width:18px;height:18px;border:2px solid #5a9280;margin-right:6px;"></span>RWM / CWM Area</div>
+    </div>
+  </div>
+
+  <!-- OBSTACLES -->
+  <div class="legend-section">
+    <div class="legend-header" onclick="toggleLegend(this)">Obstacles</div>
+    <div class="legend-body">
+
+      <div style="display:flex;align-items:center;">
+        <!-- Tree -->
+        <img src="data:image/svg+xml;charset=utf-8,
+        %3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E
+        %3Ccircle cx='11' cy='8' r='7' fill='%232e7d32'/%3E
+        %3Crect x='9' y='11' width='4' height='10' fill='%235d4037'/%3E
+        %3C/svg%3E" style="width:18px;height:18px;margin-right:6px;">
+        Tree / Tree Private Property
+      </div>
+
+      <div style="display:flex;align-items:center;">
+        <!-- Pole -->
+        <img src="data:image/svg+xml;charset=utf-8,
+        %3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E
+        %3Crect x='9' y='3' width='4' height='16' fill='%23616161'/%3E
+        %3Crect x='5' y='6' width='12' height='3' fill='%23424242'/%3E
+        %3C/svg%3E" style="width:18px;height:18px;margin-right:6px;">
+        Electric Pole / Transformer / Solar Pole / Traffic Light
+      </div>
+
+      <div style="display:flex;align-items:center;">
+        <!-- House -->
+        <img src="data:image/svg+xml;charset=utf-8,
+        %3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E
+        %3Cpolygon points='11,3 19,10 3,10' fill='%23c62828'/%3E
+        %3Crect x='6' y='10' width='10' height='9' fill='%23ef5350'/%3E
+        %3C/svg%3E" style="width:18px;height:18px;margin-right:6px;">
+        Building / Commercial / Public Establishment
+      </div>
+
+      <div style="display:flex;align-items:center;">
+        <!-- Other -->
+        <img src="data:image/svg+xml;charset=utf-8,
+        %3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E
+        %3Ccircle cx='11' cy='11' r='8' fill='%236b7280'/%3E
+        %3C/svg%3E" style="width:18px;height:18px;margin-right:6px;">
+        Bridge / Culvert / Sign Board / Others
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</aside>
+
+<div id="map"></div>
+
+</div>
+
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- proj4 for UTM → WGS84 reprojection -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+
+<script>
+// DEFINE UTM 46N (EPSG:32646)
+proj4.defs("EPSG:32646","+proj=utm +zone=46 +datum=WGS84 +units=m +no_defs");
+
+// Helper: is this coordinate pair likely already lon/lat (EPSG:4326)?
+function isLikely4326xy(coord){
+  // coord = [x,y] where x = lon, y = lat
+  if(!Array.isArray(coord) || coord.length < 2) return false;
+  const x = Number(coord[0]), y = Number(coord[1]);
+  if(Number.isFinite(x) && Number.isFinite(y)){
+    if(Math.abs(x) <= 180 && Math.abs(y) <= 90) return true;
+  }
+  return false;
+}
+
+// REPROJECT GeoJSON coordinates (UTM -> WGS84)
+// Important: GeoJSON coordinates arrays must be [lon, lat, (z?)]
+// proj4 returns [lon, lat] so we keep that order. We also preserve Z if present.
+function reprojectGeoJSON(geojson){
+    function fixCoords(c){
+        if(!Array.isArray(c)) return c;
+        // if coordinate is a number array (point) - detect base case: first element is number
+        if (typeof c[0] === 'number'){
+            // handle [x,y] or [x,y,z]
+            // If it already looks like lon/lat, return as-is.
+            if (isLikely4326xy(c)) {
+                // ensure format [lon, lat, z?] (proj4 would have returned lon,lat)
+                return c.slice(0, c.length); // return copy
+            }
+            const x = c[0], y = c[1];
+            const ll = proj4("EPSG:32646","EPSG:4326",[x,y]); // returns [lon, lat]
+            if (c.length > 2){
+                return [ll[0], ll[1], c[2]]; // lon, lat, z
+            }
+            return [ll[0], ll[1]];
+        }
+        // nested arrays (LineString coords array or Polygon ring)
+        return c.map(fixCoords);
+    }
+
+    function traverse(obj){
+        if (!obj) return obj;
+        if (obj.type === "FeatureCollection"){
+            obj.features = obj.features.map(traverse);
+            return obj;
+        } else if (obj.type === "Feature"){
+            if (obj.geometry && obj.geometry.coordinates){
+                obj = JSON.parse(JSON.stringify(obj)); // copy
+                obj.geometry.coordinates = fixCoords(obj.geometry.coordinates);
+            }
+            return obj;
+        } else {
+            return obj;
+        }
+    }
+    return traverse(JSON.parse(JSON.stringify(geojson)));
+}
+
+// MAP
+const map = L.map("map",{zoomControl:true}).setView([26.75,94.2],13);
+
+// BASEMAPS
+const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
+
+// LAYER GROUPS
+const lgESR       = L.layerGroup().addTo(map);
+const lgCompleted = L.layerGroup().addTo(map);
+const lgProposed  = L.layerGroup().addTo(map);
+const lgRoads     = L.layerGroup().addTo(map);
+const lgZoning    = L.layerGroup().addTo(map);
+const lgRWM       = L.layerGroup().addTo(map);
+const lgObstacleTree        = L.layerGroup().addTo(map);
+const lgObstaclePole        = L.layerGroup().addTo(map);
+const lgObstacleTransformer = L.layerGroup().addTo(map);
+const lgObstacleBridge      = L.layerGroup().addTo(map);
+const lgObstacleCulvert     = L.layerGroup().addTo(map);
+const lgObstacleBuilding    = L.layerGroup().addTo(map);
+const lgObstacleWall        = L.layerGroup().addTo(map);
+const lgObstacleOther       = L.layerGroup().addTo(map);
+
+const bounds = L.latLngBounds();
+
+// Simple ESR icon (inline SVG)
+const esrIcon = L.icon({
+    iconUrl: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+
+<svg xmlns='http://www.w3.org/2000/svg' width='36' height='54'>
+
+  <!-- Shadow -->
+  <ellipse cx='18' cy='49' rx='12' ry='4' fill='rgba(0,0,0,0.25)'/>
+
+  <!-- Pillars -->
+  <g>
+    <rect x='11' y='26' width='4' height='22' fill='#e6e6e6'/>
+    <rect x='17' y='26' width='4' height='22' fill='#e6e6e6'/>
+    <rect x='23' y='26' width='4' height='22' fill='#e6e6e6'/>
+
+    <!-- Shading -->
+    <rect x='13' y='26' width='2' height='22' fill='rgba(0,0,0,0.18)'/>
+    <rect x='19' y='26' width='2' height='22' fill='rgba(0,0,0,0.18)'/>
+    <rect x='25' y='26' width='2' height='22' fill='rgba(0,0,0,0.18)'/>
+  </g>
+
+  <!-- Platform -->
+  <ellipse cx='18' cy='26' rx='16' ry='4' fill='#ff7a00'/>
+  <rect   x='2'  y='26' width='32' height='6' fill='#ff7a00'/>
+
+  <!-- Tank (3D Cylinder) -->
+  <ellipse cx='18' cy='10' rx='16' ry='6' fill='#4c8cf0'/>
+  <rect x='2' y='10' width='32' height='18' fill='#2c7be5'/>
+  <rect x='2' y='10' width='8' height='18' fill='rgba(255,255,255,0.25)'/>
+
+  <ellipse cx='18' cy='28' rx='16' ry='6' fill='#003f88'/>
+
+</svg>
+
+    `),
+    iconSize: [36, 54],
+    iconAnchor: [18, 54]
+});
+
+const intakeIcon = L.icon({
+    iconUrl: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='40'>
+  <path d='M16 2 C10 12 6 18 6 24 a10 10 0 0 0 20 0 C26 18 22 12 16 2z'
+        fill='#0077cc' stroke='#004b80' stroke-width='2'/>
+  <ellipse cx='16' cy='29' rx='7' ry='4' fill='rgba(0,0,0,0.2)'/>
+</svg>
+
+    `),
+    iconSize: [32, 40],
+    iconAnchor: [16, 40]
+});
+
+// Convert all properties to a popup HTML table
+function buildPopup(props) {
+    let html = "<div style='max-height:320px;overflow:auto;'><table style='border-collapse:collapse;width:100%;font-size:13px;'>";
+    for (const key in props) {
+        let val = props[key];
+        if (val === null || val === undefined || val === "") val = "-";
+        let display = String(val);
+        if (display.length > 250) display = display.slice(0,240) + "…";
+        html += `
+        <tr>
+            <th style="text-align:left;border:1px solid #eee;padding:6px;background:#f7f7f7;vertical-align:top;width:40%">${escapeHtml(key)}</th>
+            <td style="border:1px solid #eee;padding:6px;vertical-align:top;">${escapeHtml(display)}</td>
+        </tr>`;
+    }
+    html += "</table></div>";
+    return html;
+}
+
+// Small helper to escape HTML
+function escapeHtml(str){
+  return String(str).replace(/[&<>"'`=\/]/g, function(s){ return ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'
+  })[s]; });
+}
+
+// Color map for common obstacle categories (lowercase keys)
+const obstacleColorMap = {
+  "commercial establishment": "#e6550d",
+  "embankment": "#7b3f00",
+  "river": "#1e90ff",
+  "petrol pump": "#d62828",
+  "school": "#7f3fbf",
+  "temple": "#ffb703",
+  "shop": "#ff8a00",
+  "default": "#6b7280"
+};
+
+// fallback color generator (stable hash -> color)
+function hashColor(str){
+  const palette = ["#6b7280","#e6550d","#1e90ff","#7b3f00","#d62828","#7f3fbf","#ff8a00","#2b6cff","#16a34a","#b45309"];
+  let h = 0;
+  for(let i=0;i<str.length;i++){ h = (h<<5) - h + str.charCodeAt(i); h |= 0; }
+  return palette[Math.abs(h) % palette.length];
+}
+
+// Determine obstacle style using 'layer' field (or other fallbacks)
+function getObstacleStyle(props){
+  const candidates = ['layer','Layer','Type_of_Co','Type_of__1','Select_s_1','Site_Obstr','Site_Obs_1','Pipe_Type','Pipe Type','Select_Sid','Site Obstr'];
+  let v = null;
+  for(const c of candidates){
+    if(props && Object.prototype.hasOwnProperty.call(props,c)){
+      v = props[c];
+      break;
+    }
+    const found = Object.keys(props||{}).find(k => k.toLowerCase()===c.toLowerCase());
+    if(found){ v = props[found]; break; }
+  }
+  if(!v) v = 'unknown';
+  const key = (''+v).toLowerCase().trim();
+  const color = obstacleColorMap[key] || hashColor(key);
+  return { radius: 6, weight:1, color: "#222", fillColor: color, fillOpacity: 0.9 };
+}
+
+// ---------- Generic loader for GeoJSON with reprojection and debug ----------
+async function loadLayer(path, targetLayer, options){
+    try {
+        const res = await fetch(path);
+        if(!res.ok){ console.error("Missing:", path, res.status); return; }
+        let gj = await res.json();
+
+        // Debug: show first coordinate if available
+        try{
+          const firstCoord = findFirstCoordinate(gj);
+          console.log("First coordinate (raw) for", path, firstCoord);
+        }catch(e){}
+
+        gj = reprojectGeoJSON(gj);   // <<< REPROJECT HERE
+
+        try{
+          const firstCoord2 = findFirstCoordinate(gj);
+          console.log("First coordinate (after reproj) for", path, firstCoord2);
+        }catch(e){}
+
+        const layer = L.geoJSON(gj, options);
+        layer.addTo(targetLayer);
+
+        try { bounds.extend(layer.getBounds()); } catch(e){ /* ignore */ }
+        return layer;
+    } catch(err){
+        console.error("Error loading", path, err);
+    }
+}
+
+// helper to find a coordinate inside GeoJSON for debugging
+function findFirstCoordinate(gj){
+  if(!gj) return null;
+  if(gj.type === "FeatureCollection"){
+    for(const f of gj.features || []){
+      const c = getCoordFromGeometry(f.geometry);
+      if(c) return c;
+    }
+  } else if (gj.type === "Feature"){
+    return getCoordFromGeometry(gj.geometry);
+  } else if (gj.type && gj.coordinates){
+    return getCoordFromGeometry(gj);
+  }
+  return null;
+}
+function getCoordFromGeometry(geom){
+  if(!geom) return null;
+  const coords = geom.coordinates;
+  // drill down to first number pair
+  function drill(c){
+    if(!Array.isArray(c)) return null;
+    if(typeof c[0] === 'number') return c;
+    for(const i of c){
+      const r = drill(i);
+      if(r) return r;
+    }
+    return null;
+  }
+  return drill(coords);
+}
+
+function svgIcon(svg) {
+    return L.icon({
+        iconUrl: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg),
+        iconSize: [32, 32],
+        iconAnchor: [16, 32]
+    });
+}
+
+// ICONS
+const iconTree = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <circle cx='16' cy='12' r='10' fill='#2e7d32'/>
+  <rect x='14' y='16' width='4' height='12' fill='#5d4037'/>
+</svg>`);
+
+const iconPole = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <rect x='14' y='4' width='4' height='24' fill='#616161'/>
+  <rect x='10' y='10' width='12' height='3' fill='#444'/>
+</svg>`);
+
+const iconTransformer = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <rect x='6' y='10' width='20' height='14' fill='#2962ff'/>
+  <rect x='10' y='6' width='12' height='6' fill='#0039cb'/>
+</svg>`);
+
+const iconBridge = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <rect x='4' y='16' width='24' height='6' fill='#6d4c41'/>
+  <rect x='8' y='10' width='4' height='6' fill='#8d6e63'/>
+  <rect x='20' y='10' width='4' height='6' fill='#8d6e63'/>
+</svg>`);
+
+const iconCulvert = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <rect x='6' y='14' width='20' height='10' fill='#4e342e'/>
+  <circle cx='16' cy='22' r='6' fill='#90caf9'/>
+</svg>`);
+
+const iconHouse = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <polygon points='16,4 28,14 4,14' fill='#c62828'/>
+  <rect x='8' y='14' width='16' height='12' fill='#ef5350'/>
+</svg>`);
+
+const iconCommunity = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <circle cx='16' cy='16' r='10' fill='#ab47bc'/>
+</svg>`);
+
+const iconSign = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <rect x='10' y='6' width='12' height='10' fill='#ffca28'/>
+  <rect x='15' y='16' width='2' height='10' fill='#6d4c41'/>
+</svg>`);
+
+const iconSolarPole = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <rect x='14' y='4' width='4' height='24' fill='#78909c'/>
+  <rect x='8' y='4' width='16' height='6' fill='#0288d1'/>
+</svg>`);
+
+const iconTrafficLight = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <rect x='10' y='4' width='12' height='24' fill='#212121'/>
+  <circle cx='16' cy='9' r='3' fill='red'/>
+  <circle cx='16' cy='16' r='3' fill='yellow'/>
+  <circle cx='16' cy='23' r='3' fill='green'/>
+</svg>`);
+
+const iconWall = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <rect x='4' y='12' width='24' height='12' fill='#8d6e63'/>
+  <line x1='4' y1='18' x2='28' y2='18' stroke='#5d4037' stroke-width='2'/>
+</svg>`);
+
+const iconOther = svgIcon(`
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>
+  <circle cx='16' cy='16' r='10' fill='#757575'/>
+</svg>`);
+
+// ---------- Load base layers ----------
+loadLayer("ESR.geojson", lgESR, {
+    pointToLayer:(feature, latlng) => {
+
+        const ent = (feature.properties?.Entity || "").toString().toLowerCase();
+
+        if (ent.includes("intake")) {
+            return L.marker(latlng, { icon: intakeIcon });
+        } else {
+            return L.marker(latlng, { icon: esrIcon });
+        }
+    },
+
+    onEachFeature:(feature, layer) => {
+        const title = feature.properties?.Entity || feature.properties?.Name || "Structure";
+        layer.bindTooltip(title, {
+            permanent:true,
+            className:"feature-label",
+            direction:"right",
+            offset:[10,0]
+        });
+
+        layer.on("click", () => layer.bindPopup(buildPopup(feature.properties)).openPopup());
+    }
+});
+
+loadLayer("Completed Pipeline.geojson", lgCompleted, {
+    style: function(f){ return {color:"#fb154b",weight:5,opacity:0.9}; },
+    onEachFeature: function(feature, layer){
+        const d = feature.properties && (feature.properties.description || feature.properties.Description || feature.properties.Name) || '';
+        if(d) layer.bindTooltip(d,{className:"feature-label"});
+        layer.on("click", ()=> layer.bindPopup(buildPopup(feature.properties)).openPopup());
+    }
+});
+
+loadLayer("Proposed Pipeline.geojson", lgProposed, {
+    style: function(f){ return {color:"#6ce8fb",weight:4,dashArray:"8,6",opacity:0.95}; },
+    onEachFeature: function(feature, layer){
+        layer.on("click", ()=> layer.bindPopup(buildPopup(feature.properties)).openPopup());
+    }
+});
+
+loadLayer("Road.geojson", lgRoads, {
+    style: function(feature){
+        const props = feature.properties || {};
+        const layerField = (props.Layer || props.layer || props.layername || props.TYPE || props.Type || "").toString().toLowerCase();
+        if(layerField.includes('rail')) return {color:'#8b5a2b',weight:3,dashArray:'2,6',opacity:0.95};
+        if(layerField.includes('water')) return {color:'#2b8cff',weight:3,dashArray:'1,6',opacity:0.95};
+        return {color:'#65707a',weight:3,opacity:0.95};
+    },
+    onEachFeature: function(feature, layer){
+        layer.on("click", ()=> layer.bindPopup(buildPopup(feature.properties)).openPopup());
+    }
+});
+
+loadLayer("Zoning.geojson", lgZoning, {
+    style: function(){ return { color:'#0b1220', weight:1, fillColor:'#0b1220', fillOpacity:0.08 }; },
+    onEachFeature: function(feature, layer){
+        const nm = feature.properties && (feature.properties.Entity || feature.properties.Name || feature.properties.name) || "";
+        if(nm) layer.bindTooltip(nm,{permanent:true,className:"feature-label",direction:"center"});
+        layer.on("click", ()=> layer.bindPopup(buildPopup(feature.properties)).openPopup());
+    }
+});
+
+loadLayer("RWM_CWM.geojson", lgRWM, {
+    style:function(){ return { color:'#5a9280', weight:2, fillOpacity:0.05 }; },
+    onEachFeature:function(feature, layer){ layer.on("click",()=> layer.bindPopup(buildPopup(feature.properties)).openPopup()); }
+});
+
+// ---------- Obstacles: symbolise by layer field (case-insensitive) ----------
+loadLayer("Obstacles.geojson", null, {
+  pointToLayer: function (feature, latlng) {
+
+    const val = (feature.properties["Site Obstr"] || "").toLowerCase();
+    let icon = iconOther;
+    let targetGroup = lgObstacleOther;
+
+    if (val.includes("tree")) {
+      icon = iconTree;
+      targetGroup = lgObstacleTree;
+    }
+    else if (val.includes("electric pole transformer")) {
+      icon = iconTransformer;
+      targetGroup = lgObstacleTransformer;
+    }
+    else if (val.includes("transformer")) {
+      icon = iconTransformer;
+      targetGroup = lgObstacleTransformer;
+    }
+    else if (val.includes("electric pole")) {
+      icon = iconPole;
+      targetGroup = lgObstaclePole;
+    }
+    else if (val.includes("solar pole")) {
+      icon = iconSolarPole;
+      targetGroup = lgObstaclePole;
+    }
+    else if (val.includes("traffic light")) {
+      icon = iconTrafficLight;
+      targetGroup = lgObstaclePole;
+    }
+    else if (val.includes("bridge")) {
+      icon = iconBridge;
+      targetGroup = lgObstacleBridge;
+    }
+    else if (val.includes("culvert")) {
+      icon = iconCulvert;
+      targetGroup = lgObstacleCulvert;
+    }
+    else if (
+      val.includes("private property") ||
+      val.includes("commercial") ||
+      val.includes("foundation pillar")
+    ) {
+      icon = iconHouse;
+      targetGroup = lgObstacleBuilding;
+    }
+    else if (val.includes("embankement wall")) {
+      icon = iconWall;
+      targetGroup = lgObstacleWall;
+    }
+
+    const marker = L.marker(latlng, { icon });
+    marker.bindPopup(buildPopup(feature.properties));
+    targetGroup.addLayer(marker);
+
+    bounds.extend(latlng);
+    return null; // IMPORTANT: prevent Leaflet from auto-adding
+  }
+});
+
+
+// LAYER TOGGLES
+document.getElementById("chkESR").onchange = e => e.target.checked ? map.addLayer(lgESR) : map.removeLayer(lgESR);
+document.getElementById("chkCompleted").onchange = e => e.target.checked ? map.addLayer(lgCompleted) : map.removeLayer(lgCompleted);
+document.getElementById("chkProposed").onchange = e => e.target.checked ? map.addLayer(lgProposed) : map.removeLayer(lgProposed);
+document.getElementById("chkRoads").onchange = e => e.target.checked ? map.addLayer(lgRoads) : map.removeLayer(lgRoads);
+document.getElementById("chkZoning").onchange = e => e.target.checked ? map.addLayer(lgZoning) : map.removeLayer(lgZoning);
+document.getElementById("chkRWM").onchange = e => e.target.checked ? map.addLayer(lgRWM) : map.removeLayer(lgRWM);
+document.getElementById("chkTree").onchange =
+  e => e.target.checked ? map.addLayer(lgObstacleTree) : map.removeLayer(lgObstacleTree);
+
+document.getElementById("chkPole").onchange =
+  e => e.target.checked ? map.addLayer(lgObstaclePole) : map.removeLayer(lgObstaclePole);
+
+document.getElementById("chkTransformer").onchange =
+  e => e.target.checked ? map.addLayer(lgObstacleTransformer) : map.removeLayer(lgObstacleTransformer);
+
+document.getElementById("chkBridge").onchange =
+  e => e.target.checked ? map.addLayer(lgObstacleBridge) : map.removeLayer(lgObstacleBridge);
+
+document.getElementById("chkCulvert").onchange =
+  e => e.target.checked ? map.addLayer(lgObstacleCulvert) : map.removeLayer(lgObstacleCulvert);
+
+document.getElementById("chkBuilding").onchange =
+  e => e.target.checked ? map.addLayer(lgObstacleBuilding) : map.removeLayer(lgObstacleBuilding);
+
+document.getElementById("chkWall").onchange =
+  e => e.target.checked ? map.addLayer(lgObstacleWall) : map.removeLayer(lgObstacleWall);
+
+document.getElementById("chkOther").onchange =
+  e => e.target.checked ? map.addLayer(lgObstacleOther) : map.removeLayer(lgObstacleOther);
+
+// BASEMAP TOGGLES
+document.getElementById("bmOSM").onchange = ()=>{ map.addLayer(osm); map.removeLayer(sat);};
+document.getElementById("bmSAT").onchange = ()=>{ map.addLayer(sat); map.removeLayer(osm);};
+
+// FIT ALL
+document.getElementById("zoomAll").onclick = ()=>{ try{ if(bounds.isValid()) map.fitBounds(bounds.pad(0.15)); } catch(e){ console.warn(e); } };
+// MOBILE SIDEBAR TOGGLE
+document.getElementById("toggleSidebar").onclick = () => {
+    const sb = document.getElementById("sidebar");
+    sb.classList.toggle("open");
+};
+
+function toggleLegend(el){
+  const body = el.nextElementSibling;
+  body.classList.toggle("open");
+}
+
+</script>
+
+</body>
+</html>
+
+
+
+
+
+
+
+
